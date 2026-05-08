@@ -57,6 +57,11 @@ pub fn format_comment_input_lines(
         None => String::new(),
     };
 
+    // Always show "Ctrl-J" — probing keyboard enhancement adds ~2 s to startup
+    // (crossterm's probe blocks on a 2 s timeout and holds a global mutex).
+    // Shift-Enter still works on kitty-protocol terminals; Ctrl-J works everywhere.
+    // TODO: revisit once crossterm exposes a configurable probe timeout or a
+    // non-blocking alternative, so we can show "Shift-Enter" on capable terminals.
     let newline_hint = if supports_keyboard_enhancement {
         "Shift-Enter"
     } else {

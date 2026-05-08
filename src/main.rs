@@ -9,10 +9,9 @@ use crossterm::{
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-        supports_keyboard_enhancement,
-    },
+    // Note: crossterm::terminal::supports_keyboard_enhancement is intentionally
+    // not imported — its 2 s blocking probe degrades startup (see comment_panel.rs).
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
@@ -47,15 +46,6 @@ fn main() -> anyhow::Result<()> {
     // Parse CLI arguments and resolve theme
     // This also configures syntax highlighting colors before diff parsing
     let mut cli_args = parse_cli_args();
-
-    // Check keyboard enhancement support before enabling raw mode.
-    // Skip when --stdout is used because the probe writes escape sequences to stdout,
-    // which would leak into the captured export output.
-    let keyboard_enhancement_supported = if cli_args.output_to_stdout {
-        false
-    } else {
-        matches!(supports_keyboard_enhancement(), Ok(true))
-    };
 
     // --file is mutually exclusive with --path, -r, and -w
     if cli_args.file_path.is_some() {
@@ -143,7 +133,6 @@ fn main() -> anyhow::Result<()> {
         cli_args.file_path.as_deref(),
     ) {
         Ok(mut app) => {
-            app.supports_keyboard_enhancement = keyboard_enhancement_supported;
             if let Some(message) = startup_warnings.first() {
                 app.set_warning(message.clone());
             }
@@ -176,9 +165,8 @@ fn main() -> anyhow::Result<()> {
         execute!(tty_output, EnableMouseCapture)?;
     }
 
-    // Enable keyboard enhancement for better modifier key detection (e.g., Alt+Enter)
-    // This is supported by modern terminals like Kitty, iTerm2, WezTerm, etc.
-    if keyboard_enhancement_supported {
+    // Unconditional: non-supporting terminals silently ignore the CSI sequence.
+    if !cli_args.output_to_stdout {
         let _ = execute!(
             tty_output,
             PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
