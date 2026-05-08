@@ -165,7 +165,10 @@ fn main() -> anyhow::Result<()> {
         execute!(tty_output, EnableMouseCapture)?;
     }
 
-    // Unconditional: non-supporting terminals silently ignore the CSI sequence.
+    // Push keyboard enhancement flags unconditionally — non-supporting terminals
+    // silently ignore the CSI sequence. We skip the supports_keyboard_enhancement()
+    // probe because it blocks for up to 2 seconds. Hint text always shows "Ctrl-J"
+    // (works everywhere); Shift-Enter still works on kitty-protocol terminals.
     if !cli_args.output_to_stdout {
         let _ = execute!(
             tty_output,
