@@ -1,20 +1,3 @@
-mod app;
-mod config;
-mod error;
-mod handler;
-mod hash;
-mod input;
-mod model;
-mod output;
-mod persistence;
-mod syntax;
-mod text_edit;
-mod theme;
-mod tuicrignore;
-mod ui;
-mod update;
-mod vcs;
-
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::mpsc;
@@ -33,15 +16,17 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 
-use app::{App, FocusedPanel, InputMode};
-use handler::{
+use tuicr::{app, config, handler, persistence, ui, update};
+
+use tuicr::app::{App, FocusedPanel, InputMode};
+use tuicr::handler::{
     handle_command_action, handle_comment_action, handle_commit_select_action,
     handle_commit_selector_action, handle_confirm_action, handle_diff_action,
     handle_file_list_action, handle_help_action, handle_mouse_event, handle_search_action,
     handle_visual_action,
 };
-use input::{Action, map_key_to_action};
-use theme::{parse_cli_args, resolve_theme_with_config};
+use tuicr::input::{Action, map_key_to_action};
+use tuicr::theme::{parse_cli_args, resolve_theme_with_config};
 
 /// Timeout for the "press Ctrl+C again to exit" feature
 const CTRL_C_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
