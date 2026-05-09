@@ -770,44 +770,19 @@ impl App {
 
             Ok(app)
         } else {
-            let has_staged_changes = match Self::get_staged_diff_with_ignore(
-                vcs.as_ref(),
-                &vcs_info.root_path,
-                highlighter,
-                path_filter,
-            ) {
-                Ok(_) => true,
-                Err(TuicrError::NoChanges) => false,
-                Err(TuicrError::UnsupportedOperation(_)) => false,
-                Err(e) => return Err(e),
+            let has_staged_changes = match vcs.has_staged_changes() {
+                Ok(v) => v,
+                Err(_) => false,
             };
 
-            let has_unstaged_changes = match Self::get_unstaged_diff_with_ignore(
-                vcs.as_ref(),
-                &vcs_info.root_path,
-                highlighter,
-                path_filter,
-            ) {
-                Ok(_) => true,
-                Err(TuicrError::NoChanges) => false,
-                Err(TuicrError::UnsupportedOperation(_)) => false,
-                Err(e) => return Err(e),
+            let has_unstaged_changes = match vcs.has_unstaged_changes() {
+                Ok(v) => v,
+                Err(_) => false,
             };
 
-            let working_tree_diff = if has_staged_changes || has_unstaged_changes {
-                match Self::get_working_tree_diff_with_ignore(
-                    vcs.as_ref(),
-                    &vcs_info.root_path,
-                    highlighter,
-                    path_filter,
-                ) {
-                    Ok(diff_files) => Some(diff_files),
-                    Err(TuicrError::NoChanges) => None,
-                    Err(e) => return Err(e),
-                }
-            } else {
-                None
-            };
+            // Deferred: full diff is O(tracked_files) syscalls — hangs on network FS
+            // with large repos (10k+ files). Computed on-demand in confirm_commit_selection().
+            let working_tree_diff: Option<Vec<crate::model::DiffFile>> = None;
 
             let commits = vcs.get_recent_commits(0, VISIBLE_COMMIT_COUNT)?;
             if !has_staged_changes && !has_unstaged_changes && commits.is_empty() {
@@ -3443,29 +3418,14 @@ impl App {
             self.saved_inline_selection = self.commit_selection_range;
         }
 
-        let highlighter = self.theme.syntax_highlighter();
-        let has_staged_changes = match Self::get_staged_diff_with_ignore(
-            self.vcs.as_ref(),
-            &self.vcs_info.root_path,
-            highlighter,
-            self.path_filter.as_deref(),
-        ) {
-            Ok(_) => true,
-            Err(TuicrError::NoChanges) => false,
-            Err(TuicrError::UnsupportedOperation(_)) => false,
-            Err(e) => return Err(e),
+        let has_staged_changes = match self.vcs.has_staged_changes() {
+            Ok(v) => v,
+            Err(_) => false,
         };
 
-        let has_unstaged_changes = match Self::get_unstaged_diff_with_ignore(
-            self.vcs.as_ref(),
-            &self.vcs_info.root_path,
-            highlighter,
-            self.path_filter.as_deref(),
-        ) {
-            Ok(_) => true,
-            Err(TuicrError::NoChanges) => false,
-            Err(TuicrError::UnsupportedOperation(_)) => false,
-            Err(e) => return Err(e),
+        let has_unstaged_changes = match self.vcs.has_unstaged_changes() {
+            Ok(v) => v,
+            Err(_) => false,
         };
 
         let commits = self.vcs.get_recent_commits(0, VISIBLE_COMMIT_COUNT)?;

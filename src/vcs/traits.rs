@@ -132,6 +132,16 @@ pub trait VcsBackend: Send {
             "Staging not supported for this VCS".into(),
         ))
     }
+
+    /// Lightweight check: are there staged changes? (default: false)
+    fn has_staged_changes(&self) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Lightweight check: are there unstaged changes? (default: false)
+    fn has_unstaged_changes(&self) -> Result<bool> {
+        Ok(false)
+    }
 }
 
 #[cfg(test)]

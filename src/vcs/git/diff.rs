@@ -5,16 +5,34 @@ use crate::error::{Result, TuicrError};
 use crate::model::{DiffFile, DiffHunk, DiffLine, FileStatus, LineOrigin};
 use crate::syntax::SyntaxHighlighter;
 
+/// Build DiffOptions for workdir diffs, respecting the repo's
+/// `status.showUntrackedFiles` setting (`normal` vs `all`).
+/// `repo.config()` returns the merged config (system → global → local),
+/// so user-level and repo-level settings are both respected.
+fn workdir_diff_opts(repo: &Repository) -> DiffOptions {
+    let mut opts = DiffOptions::new();
+    opts.include_untracked(true);
+    opts.show_untracked_content(true);
+
+    let recurse = repo
+        .config()
+        .and_then(|c| c.get_string("status.showUntrackedFiles"))
+        .map(|v| v.eq_ignore_ascii_case("all"))
+        .unwrap_or(false);
+    if recurse {
+        opts.recurse_untracked_dirs(true);
+    }
+
+    opts
+}
+
 pub fn get_working_tree_diff(
     repo: &Repository,
     highlighter: &SyntaxHighlighter,
 ) -> Result<Vec<DiffFile>> {
     let head = repo.head()?.peel_to_tree()?;
 
-    let mut opts = DiffOptions::new();
-    opts.include_untracked(true);
-    opts.show_untracked_content(true);
-    opts.recurse_untracked_dirs(true);
+    let mut opts = workdir_diff_opts(repo);
 
     let diff = repo.diff_tree_to_workdir_with_index(Some(&head), Some(&mut opts))?;
 
@@ -39,10 +57,7 @@ pub fn get_unstaged_diff(
     highlighter: &SyntaxHighlighter,
 ) -> Result<Vec<DiffFile>> {
     let index = repo.index()?;
-    let mut opts = DiffOptions::new();
-    opts.include_untracked(true);
-    opts.show_untracked_content(true);
-    opts.recurse_untracked_dirs(true);
+    let mut opts = workdir_diff_opts(repo);
 
     let diff = repo.diff_index_to_workdir(Some(&index), Some(&mut opts))?;
     parse_diff(&diff, highlighter)
@@ -104,10 +119,7 @@ pub fn get_working_tree_with_commits_diff(
         None
     };
 
-    let mut opts = DiffOptions::new();
-    opts.include_untracked(true);
-    opts.show_untracked_content(true);
-    opts.recurse_untracked_dirs(true);
+    let mut opts = workdir_diff_opts(repo);
 
     let diff = repo.diff_tree_to_workdir_with_index(old_tree.as_ref(), Some(&mut opts))?;
 

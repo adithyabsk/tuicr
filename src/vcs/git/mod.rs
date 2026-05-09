@@ -144,4 +144,17 @@ impl VcsBackend for GitBackend {
     fn stage_file(&self, path: &Path) -> Result<()> {
         staging::stage_file(&self.repo, path)
     }
+
+    fn has_staged_changes(&self) -> Result<bool> {
+        let head = self.repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+        let index = self.repo.index()?;
+        let diff = self.repo.diff_tree_to_index(head.as_ref(), Some(&index), None)?;
+        Ok(diff.deltas().next().is_some())
+    }
+
+    fn has_unstaged_changes(&self) -> Result<bool> {
+        let index = self.repo.index()?;
+        let diff = self.repo.diff_index_to_workdir(Some(&index), None)?;
+        Ok(diff.deltas().next().is_some())
+    }
 }
