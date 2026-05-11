@@ -154,7 +154,10 @@ impl VcsBackend for GitBackend {
 
     fn has_unstaged_changes(&self) -> Result<bool> {
         let index = self.repo.index()?;
-        let diff = self.repo.diff_index_to_workdir(Some(&index), None)?;
+        // Must include untracked files so a repo with *only* new files
+        // is not incorrectly treated as having no changes.
+        let mut opts = diff::workdir_diff_opts(&self.repo);
+        let diff = self.repo.diff_index_to_workdir(Some(&index), Some(&mut opts))?;
         Ok(diff.deltas().next().is_some())
     }
 }
