@@ -770,8 +770,8 @@ impl App {
 
             Ok(app)
         } else {
-            // has_staged_changes uses diff_tree_to_index (pure git objects, no
-            // FS walk) — fast regardless of repo size.
+            // has_staged_changes shells out to `git diff --cached --quiet`
+            // which avoids git2's ref enumeration — fast on any repo size.
             let has_staged_changes = match vcs.has_staged_changes() {
                 Ok(v) => v,
                 Err(_) => false,
