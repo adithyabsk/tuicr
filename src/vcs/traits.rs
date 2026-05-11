@@ -138,9 +138,12 @@ pub trait VcsBackend: Send {
         Ok(false)
     }
 
-    /// Lightweight check: are there unstaged changes? (default: false)
+    /// Lightweight check: are there unstaged changes?
+    /// Default returns true so non-git backends (hg, jj) never hit the
+    /// "no changes" startup guard — their working-tree diff is computed
+    /// on-demand and handles the empty case gracefully.
     fn has_unstaged_changes(&self) -> Result<bool> {
-        Ok(false)
+        Ok(true)
     }
 }
 

@@ -9,7 +9,7 @@ use crate::syntax::SyntaxHighlighter;
 /// `status.showUntrackedFiles` setting (`normal` vs `all`).
 /// `repo.config()` returns the merged config (system → global → local),
 /// so user-level and repo-level settings are both respected.
-fn workdir_diff_opts(repo: &Repository) -> DiffOptions {
+pub(crate) fn workdir_diff_opts(repo: &Repository) -> DiffOptions {
     let mut opts = DiffOptions::new();
     opts.include_untracked(true);
     opts.show_untracked_content(true);
