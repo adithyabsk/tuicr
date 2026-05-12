@@ -146,10 +146,21 @@ impl VcsBackend for GitBackend {
     }
 
     fn has_staged_changes(&self) -> Result<bool> {
-        let head = self.repo.head().ok().and_then(|h| h.peel_to_tree().ok());
-        let index = self.repo.index()?;
-        let diff = self.repo.diff_tree_to_index(head.as_ref(), Some(&index), None)?;
-        Ok(diff.deltas().next().is_some())
+        // Use git CLI instead of git2's diff_tree_to_index which triggers
+        // a full ref enumeration of .git/refs/ (thousands of syscalls).
+        // `git diff --cached --quiet` exits 1 if there are staged changes.
+        let work_dir = self
+            .repo
+            .workdir()
+            .ok_or(TuicrError::NotARepository)?;
+        let status = std::process::Command::new("git")
+            .args(["diff", "--cached", "--quiet"])
+            .current_dir(work_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| TuicrError::VcsCommand(format!("git diff --cached: {}", e)))?;
+        Ok(!status.success())
     }
 
     fn has_unstaged_changes(&self) -> Result<bool> {

@@ -31,9 +31,19 @@ use crate::error::{Result, TuicrError};
 /// Detection order: Jujutsu → Git → Mercurial.
 /// Jujutsu is tried first because jj repos are Git-backed.
 pub fn detect_vcs() -> Result<Box<dyn VcsBackend>> {
-    // Try jj first since jj repos are Git-backed
-    if let Ok(backend) = JjBackend::discover() {
-        return Ok(Box::new(backend));
+    let cwd = std::env::current_dir().map_err(|_| TuicrError::NotARepository)?;
+
+    // Only try jj if a .jj directory exists somewhere in the ancestor chain.
+    // This avoids spawning `jj root` (which walks PATH looking for the binary)
+    // when jj is not installed or the repo is not jj-managed.
+    let has_jj_dir = cwd
+        .ancestors()
+        .any(|p| p.join(".jj").is_dir());
+
+    if has_jj_dir {
+        if let Ok(backend) = JjBackend::discover() {
+            return Ok(Box::new(backend));
+        }
     }
 
     // Try git

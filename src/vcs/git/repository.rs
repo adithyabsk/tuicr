@@ -1,6 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
-use git2::{BranchType, Oid, Repository};
+use git2::{Oid, Repository};
 use std::collections::HashMap;
+use std::process::Command;
 
 use crate::error::{Result, TuicrError};
 
@@ -36,20 +37,34 @@ fn parse_commit_message(message: &str) -> (String, Option<String>) {
 fn get_branch_tip_names(repo: &Repository) -> HashMap<Oid, Vec<String>> {
     let mut names_by_tip: HashMap<Oid, Vec<String>> = HashMap::new();
 
-    if let Ok(branches) = repo.branches(Some(BranchType::Local)) {
-        for (branch, _) in branches.flatten() {
-            let Some(target) = branch.get().target() else {
-                continue;
-            };
+    // Use git CLI instead of git2's branch iterator to avoid walking
+    // .git/refs/ directories (thousands of syscalls on large repos).
+    let git_dir = repo.path();
+    let work_dir = repo.workdir().unwrap_or(git_dir);
 
-            let Ok(Some(name)) = branch.name() else {
-                continue;
-            };
-
-            names_by_tip
-                .entry(target)
-                .or_default()
-                .push(name.to_string());
+    if let Ok(output) = Command::new("git")
+        .args([
+            "for-each-ref",
+            "--format=%(objectname) %(refname:short)",
+            "refs/heads/",
+        ])
+        .current_dir(work_dir)
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let Some((oid_str, name)) = line.split_once(' ') else {
+                    continue;
+                };
+                let Ok(oid) = Oid::from_str(oid_str) else {
+                    continue;
+                };
+                names_by_tip
+                    .entry(oid)
+                    .or_default()
+                    .push(name.to_string());
+            }
         }
     }
 
