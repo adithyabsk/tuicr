@@ -777,11 +777,12 @@ impl App {
                 Err(_) => false,
             };
 
-            // Skip has_unstaged_changes at startup: it requires
-            // diff_index_to_workdir which stats every tracked file — too slow
-            // on network FS with large repos. Always offer "Unstaged changes"
-            // in the commit selector; the diff is computed on-demand when the
-            // user selects it.
+            // has_unstaged_changes now uses git CLI (`git diff --quiet` +
+            // `git ls-files --others`) — fast even on network FS.
+            let has_unstaged_changes = match vcs.has_unstaged_changes() {
+                Ok(v) => v,
+                Err(_) => false,
+            };
 
             // Don't compute working_tree_diff at startup — it triggers a full
             // working-tree walk (expensive on network FS). The diff is computed
@@ -789,29 +790,36 @@ impl App {
             let working_tree_diff: Option<Vec<crate::model::DiffFile>> = None;
 
             let commits = vcs.get_recent_commits(0, VISIBLE_COMMIT_COUNT)?;
-
-            // Only run the expensive unstaged check when there's truly nothing
-            // else to show — no staged changes and no commits.
-            if !has_staged_changes && commits.is_empty() {
-                let has_unstaged = match vcs.has_unstaged_changes() {
-                    Ok(v) => v,
-                    Err(_) => false,
-                };
-                if !has_unstaged {
-                    return Err(TuicrError::NoChanges);
-                }
+            if !has_staged_changes && !has_unstaged_changes && commits.is_empty() {
+                return Err(TuicrError::NoChanges);
             }
 
             let mut commit_list = commits.clone();
             if has_staged_changes {
                 commit_list.insert(0, Self::staged_commit_entry());
             }
-            // Always offer unstaged changes — the actual diff is computed
-            // on-demand when the user confirms the selection.
-            commit_list.insert(0, Self::unstaged_commit_entry());
+            if has_unstaged_changes {
+                commit_list.insert(0, Self::unstaged_commit_entry());
+            }
 
-            let diff_source = DiffSource::WorkingTree;
-            let session_source = SessionDiffSource::WorkingTree;
+            let diff_source = if has_staged_changes && has_unstaged_changes {
+                DiffSource::StagedAndUnstaged
+            } else if has_staged_changes {
+                DiffSource::Staged
+            } else if has_unstaged_changes {
+                DiffSource::Unstaged
+            } else {
+                DiffSource::WorkingTree
+            };
+            let session_source = if has_staged_changes && has_unstaged_changes {
+                SessionDiffSource::StagedAndUnstaged
+            } else if has_staged_changes {
+                SessionDiffSource::Staged
+            } else if has_unstaged_changes {
+                SessionDiffSource::Unstaged
+            } else {
+                SessionDiffSource::WorkingTree
+            };
 
             let session = Self::load_or_create_session(&vcs_info, session_source);
 
@@ -3419,18 +3427,16 @@ impl App {
             Err(_) => false,
         };
 
+        let has_unstaged_changes = match self.vcs.has_unstaged_changes() {
+            Ok(v) => v,
+            Err(_) => false,
+        };
+
         let commits = self.vcs.get_recent_commits(0, VISIBLE_COMMIT_COUNT)?;
 
-        // Only run the expensive unstaged check when there's nothing else.
-        if commits.is_empty() && !has_staged_changes {
-            let has_unstaged = match self.vcs.has_unstaged_changes() {
-                Ok(v) => v,
-                Err(_) => false,
-            };
-            if !has_unstaged {
-                self.set_message("No commits or staged/unstaged changes found");
-                return Ok(());
-            }
+        if commits.is_empty() && !has_staged_changes && !has_unstaged_changes {
+            self.set_message("No commits or staged/unstaged changes found");
+            return Ok(());
         }
 
         // Check if there might be more commits
@@ -3439,8 +3445,9 @@ impl App {
         if has_staged_changes {
             self.commit_list.insert(0, Self::staged_commit_entry());
         }
-        // Always offer unstaged changes — diff computed on-demand.
-        self.commit_list.insert(0, Self::unstaged_commit_entry());
+        if has_unstaged_changes {
+            self.commit_list.insert(0, Self::unstaged_commit_entry());
+        }
         self.commit_list_cursor = 0;
         self.commit_list_scroll_offset = 0;
         self.commit_selection_range = None;

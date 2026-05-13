@@ -164,11 +164,121 @@ impl VcsBackend for GitBackend {
     }
 
     fn has_unstaged_changes(&self) -> Result<bool> {
-        let index = self.repo.index()?;
-        // Must include untracked files so a repo with *only* new files
+        // Use git CLI instead of git2's diff_index_to_workdir which stats
+        // every tracked file — too slow on network FS with large repos.
+        let work_dir = self
+            .repo
+            .workdir()
+            .ok_or(TuicrError::NotARepository)?;
+        // `git diff --quiet` exits 1 if there are modified tracked files.
+        let tracked = std::process::Command::new("git")
+            .args(["diff", "--quiet"])
+            .current_dir(work_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| TuicrError::VcsCommand(format!("git diff: {}", e)))?;
+        if !tracked.success() {
+            return Ok(true);
+        }
+        // Also check for untracked files so a repo with *only* new files
         // is not incorrectly treated as having no changes.
-        let mut opts = diff::workdir_diff_opts(&self.repo);
-        let diff = self.repo.diff_index_to_workdir(Some(&index), Some(&mut opts))?;
-        Ok(diff.deltas().next().is_some())
+        let untracked = std::process::Command::new("git")
+            .args(["ls-files", "--others", "--exclude-standard"])
+            .current_dir(work_dir)
+            .stderr(std::process::Stdio::null())
+            .output()
+            .map_err(|e| TuicrError::VcsCommand(format!("git ls-files: {}", e)))?;
+        Ok(!untracked.stdout.is_empty())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// Helper: create a temporary git repo with one initial commit.
+    fn tmp_git_repo() -> (tempfile::TempDir, GitBackend) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+
+        // git init + initial commit
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        fs::write(path.join("init.txt"), "hello").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(path)
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(path)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+
+        let repo = Repository::open(path).unwrap();
+        let info = VcsInfo {
+            root_path: path.to_path_buf(),
+            head_commit: "test".to_string(),
+            branch_name: Some("main".to_string()),
+            vcs_type: VcsType::Git,
+        };
+        (dir, GitBackend { repo, info })
+    }
+
+    #[test]
+    fn has_unstaged_changes_false_on_clean_repo() {
+        let (_dir, backend) = tmp_git_repo();
+        assert!(!backend.has_unstaged_changes().unwrap());
+    }
+
+    #[test]
+    fn has_unstaged_changes_true_on_modified_tracked_file() {
+        let (dir, backend) = tmp_git_repo();
+        fs::write(dir.path().join("init.txt"), "modified").unwrap();
+        assert!(backend.has_unstaged_changes().unwrap());
+    }
+
+    #[test]
+    fn has_unstaged_changes_true_on_untracked_file() {
+        let (dir, backend) = tmp_git_repo();
+        fs::write(dir.path().join("new_file.txt"), "new").unwrap();
+        assert!(backend.has_unstaged_changes().unwrap());
+    }
+
+    #[test]
+    fn has_staged_changes_false_on_clean_repo() {
+        let (_dir, backend) = tmp_git_repo();
+        assert!(!backend.has_staged_changes().unwrap());
+    }
+
+    #[test]
+    fn has_staged_changes_true_when_file_staged() {
+        let (dir, backend) = tmp_git_repo();
+        fs::write(dir.path().join("init.txt"), "staged change").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "init.txt"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        assert!(backend.has_staged_changes().unwrap());
     }
 }
